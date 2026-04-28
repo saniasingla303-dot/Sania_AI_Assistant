@@ -1,0 +1,11 @@
+## The `requirements,txt` (The Dependency List)
+
+This file allows anyone else to install all the libraries you used with a single command.
+
+1. Open your terminal in VS Code (ensure your `venv` is active).
+
+2. Run this command:
+   ```powershell
+   pip freeze > requirements.txt
+
+3. You will see a new file appear with a list of every library (like faster-whisper, keyboard, etc.)

@@ -1,0 +1,17 @@
+# Python environment and cache
+venv/
+_pycache_/
+*.pyc
+
+# Large AI Model files (Don't upload these, they are GBs in size!)
+models/
+*.bin
+*.onnx
+
+# Windows & System files
+.DS_Store
+*.exe
+Thumbs.db
+
+# Private keys or configurations
+.env
