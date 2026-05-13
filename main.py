@@ -35,8 +35,17 @@ def load_model(model_size, icon=None):
             del model
             gc.collect() 
 
-        # Load the new model
-        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        # --- DYNAMIC HARDWARE DETECTION ---
+        try:
+            # First, attempt to load the model on a dedicated NVIDIA GPU
+            model = WhisperModel(model_size, device="cuda", compute_type="float16")
+            print(f"[SYSTEM] Hardware Check: NVIDIA GPU detected! Running on GPU 🚀")
+        except Exception:
+            # If no CUDA GPU is found (like on standard laptops), fallback to CPU
+            model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            print(f"[SYSTEM] Hardware Check: No GPU detected. Safely falling back to CPU 🐢")
+        # ----------------------------------
+        
         current_model_name = model_size
         print(f"[SYSTEM] Successfully loaded the {current_model_name} model!")
         
