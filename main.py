@@ -1,3 +1,6 @@
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox  # <-- NEW: For terminal-style popups
 import keyboard
 import sounddevice as sd
 import numpy as np
@@ -14,51 +17,127 @@ import gc  # Garbage Collection for memory management
 # --- 1. GLOBAL STATE & AI SETUP ---
 current_model_name = "base"
 current_language_mode = "English"
+first_boot = True  # <-- NEW: Tracks if the app just started
 model = None
 recording = False
 audio_buffer = []
 is_loading_model = False # Safety lock
+root = None # Added this here to fix Pylance warning!
+
+
+# --- VISUAL LOADING UI (PRE-BUILT ARCHITECTURE) ---
+def setup_ui():
+    global root, loading_window, progress_bar, loading_label
+    
+    # Initialize the main hidden Tkinter engine
+    root = tk.Tk()
+    root.withdraw()
+    
+    # PRE-BUILD the loading window so it's ready instantly
+    loading_window = tk.Toplevel(root)
+    loading_window.title("Sania AI Assistant")
+    # Bulletproof window centering (No 'eval' required!)
+    window_width = 350
+    window_height = 120
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    center_x = int((screen_width - window_width) / 2)
+    center_y = int((screen_height - window_height) / 2)
+    
+    loading_window.geometry(f"{window_width}x{window_height}+{center_x}+{center_y}")
+    loading_window.attributes('-topmost', True)
+    
+    # Prevent the user from manually closing the loading box and breaking the app
+    loading_window.protocol("WM_DELETE_WINDOW", lambda: None) 
+    
+    # Create the labels and progress bar once
+    loading_label = tk.Label(loading_window, text="Preparing AI Model...", font=("Segoe UI", 11, "bold"))
+    loading_label.pack(pady=10)
+    
+    tk.Label(loading_window, text="Downloading/Loading in progress. Please wait...", font=("Segoe UI", 9)).pack()
+    
+    progress_bar = ttk.Progressbar(loading_window, mode='indeterminate', length=280)
+    progress_bar.pack(pady=10)
+    
+    # Keep it hidden until we need it!
+    loading_window.withdraw()
+
+def show_loading_ui(model_name):
+    # Just update the text and make it visible! (Takes 0.001 seconds)
+    loading_label.config(text=f"Preparing AI Model: {model_name}")
+    progress_bar.start(15)
+    loading_window.deiconify() 
+    loading_window.update() 
+
+def hide_loading_ui():
+    # Stop the animation and hide it again
+    progress_bar.stop()
+    loading_window.withdraw()
+
 
 def load_model(model_size, icon=None):
-    global model, current_model_name, is_loading_model
+    global model, current_model_name, is_loading_model, first_boot
     
     is_loading_model = True
-    print(f"\n[SYSTEM] Preparing to load '{model_size}' model...")
     
+     # 1. Show Native Windows Toast Popup FIRST
     if icon:
-        # Triggers a native Windows popup notification!
-        icon.notify(f"Downloading/Loading '{model_size}' model.\nThis may take a minute...", "AI Model Switching")
+        icon.notify("Please wait. This may take a minute depending on your internet speed.", f"Loading Model: {model_size}...")
+
+    # Give the popup 0.5 seconds to start sliding in smoothly
+    time.sleep(0.5)
+
+    # 2. Instantly show the pre-built visual progress window
+    if root is not None:
+        root.after(0, show_loading_ui, model_size)
+
+    # 3. BREATHE: Give Windows time to fully draw the green bar before AI takes the CPU
+    time.sleep(1.0)
 
     try:
-        # INDUSTRY STANDARD: Clear the old model from RAM before loading a new one
+        # Clear old memory
         if model is not None:
             del model
             gc.collect() 
 
         # --- DYNAMIC HARDWARE DETECTION ---
         try:
-            # First, attempt to load the model on a dedicated NVIDIA GPU
             model = WhisperModel(model_size, device="cuda", compute_type="float16")
-            print(f"[SYSTEM] Hardware Check: NVIDIA GPU detected! Running on GPU 🚀")
+            hw_status = "Hardware Check: NVIDIA GPU detected! Running on GPU 🚀"
         except Exception:
-            # If no CUDA GPU is found (like on standard laptops), fallback to CPU
             model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            print(f"[SYSTEM] Hardware Check: No GPU detected. Safely falling back to CPU 🐢")
+            hw_status = "Hardware Check: No GPU detected. Safely falling back to CPU 🐢"
         # ----------------------------------
         
         current_model_name = model_size
-        print(f"[SYSTEM] Successfully loaded the {current_model_name} model!")
         
+        # 4. HIDE the UI window safely BEFORE showing success popups
+        if root is not None:
+            root.after(0, hide_loading_ui)
+        
+        # Breathe again to let the window vanish cleanly
+        time.sleep(0.5)
+        
+        # 5. Success Notification (System Tray)
         if icon:
-            icon.notify(f"Successfully switched to '{model_size}' model!", "AI Ready")
+            icon.notify(f"Successfully connected to the {model_size} model. Press Ctrl+Space to talk!", "AI Ready")
+
+        # 6. The "Terminal" Popup for the end user (Only on first boot)
+        if first_boot:
+            welcome_msg = f"Booting up Sania AI Assistant...\n\n[SYSTEM] Preparing '{model_size}' model...\n[SYSTEM] {hw_status}\n\nAssistant Active! Check your system tray (bottom right) for the menu."
+            if root is not None:
+                root.after(0, lambda: messagebox.showinfo("System Initialization", welcome_msg))
+            first_boot = False
 
     except Exception as e:
-        print(f"[ERROR] Failed to load model: {e}")
+        if root is not None:
+            root.after(0, hide_loading_ui)
         if icon:
-            icon.notify(f"Error loading model. Check terminal.", "System Error")
+            icon.notify(f"Failed to load the model. Check your internet connection.", "System Error")
     
     finally:
         is_loading_model = False
+        
 
 # --- 2. RECORDING LOGIC ---
 def callback(indata, frames, time, status):
@@ -141,14 +220,12 @@ def run_hotkeys():
         sd.sleep(50)
 
 if __name__ == "__main__":
-    # 1. Load the initial base model on startup
     print("Booting up Sania AI Assistant...")
-    load_model("base")
     
-    # 2. Start the hotkey listener in the background
-    threading.Thread(target=run_hotkeys, daemon=True).start()
+    # 1. Run the new UI Setup function (Pre-builds the hidden window)
+    setup_ui()
     
-    # 3. Build the dynamic System Tray menu
+    # 2. Build the System Tray menu
     menu = pystray.Menu(
         pystray.MenuItem('Select AI Model', pystray.Menu(
             pystray.MenuItem('tiny', on_menu_click, radio=True, checked=lambda item: current_model_name == 'tiny'),
@@ -164,6 +241,16 @@ if __name__ == "__main__":
         pystray.MenuItem('Exit', lambda i: os._exit(0))
     )
 
-    print("Assistant Active! Check your system tray (bottom right) for the menu.")
     icon = pystray.Icon("WhisperApp", create_icon(), menu=menu)
-    icon.run()
+    
+    # 3. CRITICAL: Run the System Tray in a DETACHED background thread
+    icon.run_detached()
+
+    # 4. Start the hotkey listener and initial model load in the background
+    threading.Thread(target=run_hotkeys, daemon=True).start()
+    threading.Thread(target=load_model, args=("base", icon), daemon=True).start()
+
+    # 5. Run the UI Mainloop (This keeps the app alive and crash-free!)
+    root.mainloop()
+
+    
